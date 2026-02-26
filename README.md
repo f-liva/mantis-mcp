@@ -17,31 +17,104 @@ Enables natural language queries like *"have I ever discussed X with client Y?"*
 ### 1. Install
 
 ```bash
+git clone git@github.com:f-liva/mantis-mcp.git
+cd mantis-mcp
 npm install
 npm run build
 ```
 
-### 2. Configure
+### 2. Setup (automated)
 
-Copy `.env.example` to `.env` and fill in your MantisBT credentials:
+Run the interactive setup script — it detects your platform (WSL, Windows, macOS, Linux), asks for your MantisBT credentials, tests the connection, and configures everything automatically:
 
 ```bash
-cp .env.example .env
+./setup.sh setup
 ```
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `MANTIS_API_URL` | Yes | — | MantisBT REST API base URL (e.g. `https://mantis.example.com/api/rest`) |
-| `MANTIS_API_KEY` | Yes | — | API token (from MantisBT → My Account → API Tokens) |
-| `DB_PATH` | No | `./mantis-mcp.db` | SQLite database file path |
-| `EMBEDDING_MODEL` | No | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | Hugging Face model for embeddings |
-| `SYNC_BATCH_SIZE` | No | `50` | Issues fetched per batch during sync |
-| `SYNC_ON_STARTUP` | No | `false` | Auto-sync when server starts |
-| `LOG_LEVEL` | No | `info` | `error` / `warn` / `info` / `debug` |
+This will:
+- Prompt for your MantisBT API URL and token
+- Test the API connection
+- Configure **Claude Desktop** (`claude_desktop_config.json`)
+- Configure **Claude Code** (`.mcp.json`)
+- Create the `.env` file
 
-### 3. Use with Claude Desktop
+You can also pass parameters directly:
 
-Add to your Claude Desktop configuration (`claude_desktop_config.json`):
+```bash
+./setup.sh setup -u "https://mantis.example.com/api/rest" -k "your-api-token"
+```
+
+Or configure only one target:
+
+```bash
+./setup.sh setup -t desktop   # only Claude Desktop
+./setup.sh setup -t cli       # only Claude Code
+./setup.sh setup -t both      # both (default)
+```
+
+### 3. Manual Configuration (alternative)
+
+If you prefer to configure manually:
+
+#### Claude Desktop
+
+Edit your `claude_desktop_config.json`:
+
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Linux**: `~/.config/claude/claude_desktop_config.json`
+
+**Windows (without WSL):**
+```json
+{
+  "mcpServers": {
+    "mantis": {
+      "command": "node",
+      "args": ["C:\\Users\\YOURUSERNAME\\mantis-mcp\\dist\\index.js"],
+      "env": {
+        "MANTIS_API_URL": "https://mantis.example.com/api/rest",
+        "MANTIS_API_KEY": "your-api-token"
+      }
+    }
+  }
+}
+```
+
+**Windows with WSL:**
+```json
+{
+  "mcpServers": {
+    "mantis": {
+      "command": "wsl",
+      "args": ["bash", "-c", "cd /home/YOURUSERNAME/mantis-mcp && node dist/index.js"],
+      "env": {
+        "MANTIS_API_URL": "https://mantis.example.com/api/rest",
+        "MANTIS_API_KEY": "your-api-token"
+      }
+    }
+  }
+}
+```
+
+**macOS / Linux:**
+```json
+{
+  "mcpServers": {
+    "mantis": {
+      "command": "node",
+      "args": ["/absolute/path/to/mantis-mcp/dist/index.js"],
+      "env": {
+        "MANTIS_API_URL": "https://mantis.example.com/api/rest",
+        "MANTIS_API_KEY": "your-api-token"
+      }
+    }
+  }
+}
+```
+
+#### Claude Code (CLI)
+
+Create a `.mcp.json` in any project directory:
 
 ```json
 {
@@ -58,9 +131,21 @@ Add to your Claude Desktop configuration (`claude_desktop_config.json`):
 }
 ```
 
+## Configuration
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `MANTIS_API_URL` | Yes | — | MantisBT REST API base URL |
+| `MANTIS_API_KEY` | Yes | — | API token (from MantisBT → My Account → API Tokens) |
+| `DB_PATH` | No | `./mantis-mcp.db` | SQLite database file path |
+| `EMBEDDING_MODEL` | No | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | Hugging Face model for embeddings |
+| `SYNC_BATCH_SIZE` | No | `50` | Issues fetched per batch during sync |
+| `SYNC_ON_STARTUP` | No | `false` | Auto-sync when server starts |
+| `LOG_LEVEL` | No | `info` | `error` / `warn` / `info` / `debug` |
+
 ## Tools Reference
 
-### CRUD Tools
+### CRUD Tools (8)
 
 | Tool | Description | Key Parameters |
 |---|---|---|
@@ -73,7 +158,7 @@ Add to your Claude Desktop configuration (`claude_desktop_config.json`):
 | `get_user` | Look up user by username | `username` |
 | `get_users_by_project_id` | List project members | `project_id` |
 
-### Semantic Search Tools
+### Semantic Search Tools (3)
 
 | Tool | Description | Key Parameters |
 |---|---|---|
@@ -90,7 +175,7 @@ Add to your Claude Desktop configuration (`claude_desktop_config.json`):
 ## Architecture
 
 ```
-Claude Desktop / MCP Client
+Claude Desktop / Claude Code
         │
         │ stdio (JSON-RPC)
         ▼
