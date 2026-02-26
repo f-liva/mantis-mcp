@@ -1,0 +1,22 @@
+name: mantis-mcp
+help: Setup and manage the MantisBT MCP server
+version: 1.0.0
+
+commands:
+  - name: setup
+    help: Configure mantis-mcp for Claude Desktop and/or Claude Code
+    flags:
+      - long: --api-url
+        short: -u
+        arg: url
+        help: MantisBT REST API URL (e.g. https://debug.espero.it/mantis/api/rest)
+      - long: --api-key
+        short: -k
+        arg: key
+        help: MantisBT API token
+      - long: --target
+        short: -t
+        arg: target
+        help: "Target to configure: desktop, cli, or both"
+        allowed: [desktop, cli, both]
+        default: both
