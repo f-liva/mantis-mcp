@@ -131,7 +131,7 @@ export class VectorStore {
         chunk.metadata_json
       );
 
-    const chunkId = Number(info.lastInsertRowid);
+    const chunkId = BigInt(info.lastInsertRowid);
 
     // sqlite-vec requires a Buffer for the vector
     const vecBuf = Buffer.from(
@@ -156,7 +156,7 @@ export class VectorStore {
       const ids = chunks.map((c) => c.id);
       // sqlite-vec doesn't support UPDATE, must delete+reinsert
       for (const id of ids) {
-        this.db.prepare(`DELETE FROM vec_chunks WHERE chunk_id = ?`).run(id);
+        this.db.prepare(`DELETE FROM vec_chunks WHERE chunk_id = ?`).run(BigInt(id));
       }
       this.db.prepare(`DELETE FROM chunks WHERE issue_id = ?`).run(issueId);
     }
