@@ -1,6 +1,6 @@
 name: mantis-mcp
 help: Setup and manage the MantisBT MCP server
-version: 1.0.0
+version: 1.0.1
 
 commands:
   - name: setup

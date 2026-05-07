@@ -588,7 +588,7 @@ mantis_mcp_setup_parse_requirements() {
 
 # :command.initialize
 initialize() {
-  declare -g version="1.0.0"
+  declare -g version="1.0.1"
   set -e
 
 }
