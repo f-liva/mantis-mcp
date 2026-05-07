@@ -175,11 +175,45 @@ mantis_mcp_setup_command() {
   PROJECT_DIR="$SCRIPT_DIR"
   INDEX_PATH="$PROJECT_DIR/dist/index.js"
 
-  if [[ ! -f "$INDEX_PATH" ]]; then
-    echo "Error: dist/index.js not found at $INDEX_PATH"
-    echo "Please run 'npm run build' first."
-    exit 1
-  fi
+  ensure_deps_and_build() {
+    if [[ -d "$PROJECT_DIR/node_modules" ]] && [[ -f "$INDEX_PATH" ]]; then
+      return 0
+    fi
+
+    if ! command -v npm >/dev/null 2>&1; then
+      echo "Error: npm not found in PATH. Install Node.js >= 18 and re-run setup." >&2
+      exit 1
+    fi
+
+    echo "Installing dependencies (this happens once)..."
+    pushd "$PROJECT_DIR" >/dev/null
+
+    if ! npm install --no-audit --no-fund 2>/dev/null; then
+      echo "Default npm cache failed (likely permissions). Retrying with isolated cache..."
+      local tmp_cache
+      tmp_cache="$(mktemp -d -t npm-cache.XXXXXX)"
+      if ! npm install --no-audit --no-fund --cache "$tmp_cache"; then
+        echo "Error: npm install failed. Run 'sudo chown -R $(id -u):$(id -g) ~/.npm' and retry." >&2
+        popd >/dev/null
+        exit 1
+      fi
+    fi
+
+    if [[ ! -f "$INDEX_PATH" ]]; then
+      echo "Building TypeScript..."
+      if ! npm run build; then
+        echo "Error: npm run build failed." >&2
+        popd >/dev/null
+        exit 1
+      fi
+    fi
+
+    popd >/dev/null
+    echo "Dependencies ready."
+    echo ""
+  }
+
+  ensure_deps_and_build
 
   API_URL="${args[--api-url]:-}"
   if [[ -z "$API_URL" ]]; then
