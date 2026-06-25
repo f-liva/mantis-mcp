@@ -197,11 +197,33 @@ export function registerCrudTools(
           noteData.view_state = { name: params.view_state };
         }
         const note = await client.addNote(params.issue_id, noteData);
+
+        // Auto-feedback: una risposta PUBBLICA sposta la issue su "feedback"
+        // (palla al reporter; con reassign_on_feedback torna ad assigned quando
+        // risponde). Best-effort: non deve far fallire l'aggiunta della nota.
+        // Skip se gia risolta/chiusa (per non riaprirla) o gia in feedback.
+        const isPublic = !params.view_state || params.view_state === "public";
+        let autoFeedback: string | null = null;
+        if (isPublic) {
+          try {
+            const cur = await client.getIssue(params.issue_id);
+            const st = cur?.status?.name;
+            if (st && !["resolved", "closed", "feedback"].includes(st)) {
+              await client.updateIssue(params.issue_id, { status: { name: "feedback" } });
+              autoFeedback = `status -> feedback (era "${st}")`;
+            } else {
+              autoFeedback = `status invariato ("${st ?? "?"}")`;
+            }
+          } catch (e) {
+            autoFeedback = `auto-feedback non applicato: ${e instanceof Error ? e.message : String(e)}`;
+          }
+        }
+
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(note, null, 2),
+              text: JSON.stringify(note, null, 2) + (autoFeedback ? `\n\n[auto] ${autoFeedback}` : ""),
             },
           ],
         };
