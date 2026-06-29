@@ -1,6 +1,18 @@
 import { z } from "zod";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MantisClient } from "../mantis-client.js";
+
+/** Read local file paths into Mantis file payloads (base64). */
+function filesToPayload(
+  paths: string[]
+): Array<{ name: string; content: string }> {
+  return paths.map((p) => ({
+    name: basename(p),
+    content: readFileSync(p).toString("base64"),
+  }));
+}
 
 export function registerCrudTools(
   server: McpServer,
@@ -92,7 +104,9 @@ export function registerCrudTools(
       priority: z.string().optional().describe("Priority name (e.g. 'normal', 'high', 'urgent')"),
       severity: z.string().optional().describe("Severity name"),
       handler: z.string().optional().describe("Handler username"),
+      reporter: z.string().optional().describe("Reporter: username OR full/partial real name (resolved by searching the project's known users). Requires admin to set someone other than the API user."),
       tags: z.array(z.string()).optional().describe("Tag names"),
+      files: z.array(z.string()).optional().describe("Local file paths to attach to the issue (e.g. the .eml of the source email conversation)"),
     },
     async (params) => {
       try {
@@ -105,14 +119,45 @@ export function registerCrudTools(
         if (params.priority) data.priority = { name: params.priority };
         if (params.severity) data.severity = { name: params.severity };
         if (params.handler) data.handler = { name: params.handler };
+        if (params.reporter) {
+          const r = await client.resolveUser(params.reporter, params.project_id);
+          if (r.candidates) {
+            const list = r.candidates
+              .map((u) => `- ${u.name} (${u.real_name}, ${u.email})`)
+              .join("\n");
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Ambiguous reporter "${params.reporter}". Candidates:\n${list}\nRe-run with an exact username.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          // resolved -> exact username; otherwise pass the raw string and let
+          // the API try to match it (e.g. an exact username not seen in issues).
+          data.reporter = { name: r.user ? r.user.name : params.reporter };
+        }
         if (params.tags) data.tags = params.tags.map((name) => ({ name }));
 
         const issue = await client.createIssue(data);
+
+        let attachNote = "";
+        if (params.files?.length) {
+          try {
+            await client.addFiles(issue.id, filesToPayload(params.files));
+            attachNote = `\n\n[attached] ${params.files.map((p) => basename(p)).join(", ")}`;
+          } catch (e) {
+            attachNote = `\n\n[attach failed] ${e instanceof Error ? e.message : String(e)}`;
+          }
+        }
+
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(issue, null, 2),
+              text: JSON.stringify(issue, null, 2) + attachNote,
             },
           ],
         };
@@ -122,6 +167,39 @@ export function registerCrudTools(
             {
               type: "text" as const,
               text: `Error creating issue: ${err instanceof Error ? err.message : String(err)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── add_issue_file ─────────────────────────────────────────────────
+  server.tool(
+    "add_issue_file",
+    "Attach one or more local files to an existing issue (e.g. the .eml of a mail conversation)",
+    {
+      issue_id: z.number().int().positive().describe("Issue ID"),
+      paths: z.array(z.string()).min(1).describe("Local file paths to attach"),
+    },
+    async ({ issue_id, paths }) => {
+      try {
+        await client.addFiles(issue_id, filesToPayload(paths));
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Attached to issue #${issue_id}: ${paths.map((p) => basename(p)).join(", ")}`,
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error attaching files to issue #${issue_id}: ${err instanceof Error ? err.message : String(err)}`,
             },
           ],
           isError: true,

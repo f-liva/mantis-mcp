@@ -73,6 +73,11 @@ export class MantisClient {
       headers: {
         Authorization: config.MANTIS_API_KEY,
         "Content-Type": "application/json",
+        // Cloudflare davanti a debug.espero.it risponde 403 (error 1010) se lo
+        // User-Agent e' quello di default di axios/node. Un UA browser bypassa
+        // il blocco. Vedi anche il workaround documentato per le chiamate dirette.
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       },
       timeout: 30000,
     });
@@ -142,6 +147,7 @@ export class MantisClient {
     priority?: { name: string };
     severity?: { name: string };
     handler?: { name: string };
+    reporter?: { name: string };
     tags?: Array<{ name: string }>;
   }): Promise<MantisIssue> {
     const resp = await this.api.post<{ issue: MantisIssue }>("/issues", data);
@@ -158,6 +164,15 @@ export class MantisClient {
       data
     );
     return resp.data.issues[0];
+  }
+
+  /** Attach one or more files (base64 content) to an issue */
+  async addFiles(
+    issueId: number,
+    files: Array<{ name: string; content: string }>
+  ): Promise<unknown> {
+    const resp = await this.api.post(`/issues/${issueId}/files`, { files });
+    return resp.data;
   }
 
   /** Add a note to an issue */
@@ -199,5 +214,65 @@ export class MantisClient {
       `/projects/${projectId}/users`
     );
     return Array.isArray(resp.data) ? resp.data : [];
+  }
+
+  /**
+   * Derive the distinct users seen in a project's issues (reporters + handlers).
+   * The MantisBT REST API on debug.espero.it has no usable /users endpoint
+   * (GET returns 405), so this is the only way to resolve a user from a free
+   * text name. ponytail: scans up to 4 pages (~800 issues); a user who never
+   * reported/handled an issue in that window won't be found — fall back to
+   * passing an exact username if so.
+   */
+  async findProjectUsers(projectId: number): Promise<MantisUser[]> {
+    const map = new Map<number, MantisUser>();
+    const pageSize = 200;
+    for (let page = 1; page <= 4; page++) {
+      const resp = await this.api.get<{ issues: MantisIssue[] }>("/issues", {
+        params: {
+          project_id: projectId,
+          page_size: pageSize,
+          page,
+          select: "id,reporter,handler",
+        },
+      });
+      const issues = resp.data.issues ?? [];
+      for (const it of issues) {
+        for (const u of [it.reporter, it.handler]) {
+          // only entries carrying a real_name are full MantisUser objects
+          if (u && u.id && (u as MantisUser).real_name !== undefined) {
+            map.set(u.id, u as unknown as MantisUser);
+          }
+        }
+      }
+      if (issues.length < pageSize) break;
+    }
+    return [...map.values()];
+  }
+
+  /**
+   * Resolve a user from a free-text query: exact username, or a partial match
+   * on username / real name / email (case-insensitive). Returns the single
+   * match, or the candidate list when ambiguous, or null when none found.
+   */
+  async resolveUser(
+    query: string,
+    projectId: number
+  ): Promise<{ user?: MantisUser; candidates?: MantisUser[] }> {
+    const q = query.trim().toLowerCase();
+    const users = await this.findProjectUsers(projectId);
+
+    const exact = users.filter((u) => (u.name ?? "").toLowerCase() === q);
+    if (exact.length === 1) return { user: exact[0] };
+
+    const partial = users.filter(
+      (u) =>
+        (u.name ?? "").toLowerCase().includes(q) ||
+        (u.real_name ?? "").toLowerCase().includes(q) ||
+        (u.email ?? "").toLowerCase().includes(q)
+    );
+    if (partial.length === 1) return { user: partial[0] };
+    if (partial.length > 1) return { candidates: partial };
+    return {};
   }
 }
