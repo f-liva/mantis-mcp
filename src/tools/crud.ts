@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { basename, join, isAbsolute, resolve } from "node:path";
+import { homedir } from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MantisClient } from "../mantis-client.js";
 
@@ -200,6 +201,55 @@ export function registerCrudTools(
             {
               type: "text" as const,
               text: `Error attaching files to issue #${issue_id}: ${err instanceof Error ? err.message : String(err)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ── download_issue_file ────────────────────────────────────────────
+  server.tool(
+    "download_issue_file",
+    "Download an attachment from an issue to local disk. Get issue_id + file_id from get_issue_by_id (attachments[].id). Returns the saved absolute path.",
+    {
+      issue_id: z.number().int().positive().describe("Issue ID"),
+      file_id: z.number().int().positive().describe("Attachment file ID (from issue.attachments[].id)"),
+      save_dir: z
+        .string()
+        .optional()
+        .describe("Destination directory (default ~/Scaricati/mantis-attachments)"),
+    },
+    async ({ issue_id, file_id, save_dir }) => {
+      try {
+        const f = await client.getFile(issue_id, file_id);
+        const dir = save_dir
+          ? isAbsolute(save_dir)
+            ? save_dir
+            : resolve(save_dir)
+          : join(homedir(), "Scaricati", "mantis-attachments");
+        mkdirSync(dir, { recursive: true });
+        const path = join(dir, basename(f.filename));
+        writeFileSync(path, Buffer.from(f.content, "base64"));
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { path, filename: f.filename, size: f.size, content_type: f.content_type },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error downloading file #${file_id} from issue #${issue_id}: ${err instanceof Error ? err.message : String(err)}`,
             },
           ],
           isError: true,

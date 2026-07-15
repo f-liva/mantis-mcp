@@ -166,6 +166,19 @@ export class MantisClient {
     return resp.data.issues[0];
   }
 
+  /** Download a single attachment (base64 content) from an issue */
+  async getFile(
+    issueId: number,
+    fileId: number
+  ): Promise<{ filename: string; content: string; content_type?: string; size?: number }> {
+    const resp = await this.api.get<{
+      files: Array<{ filename: string; content: string; content_type?: string; size?: number }>;
+    }>(`/issues/${issueId}/files/${fileId}`);
+    const f = resp.data.files?.[0];
+    if (!f) throw new Error(`file ${fileId} not found on issue ${issueId}`);
+    return f;
+  }
+
   /** Attach one or more files (base64 content) to an issue */
   async addFiles(
     issueId: number,
