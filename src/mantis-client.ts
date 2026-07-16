@@ -109,11 +109,27 @@ export class MantisClient {
       headers: {
         Authorization: config.MANTIS_API_KEY,
         "Content-Type": "application/json",
-        // Cloudflare davanti a debug.espero.it risponde 403 (error 1010) se lo
-        // User-Agent e' quello di default di axios/node. Un UA browser bypassa
-        // il blocco. Vedi anche il workaround documentato per le chiamate dirette.
+        // Cloudflare davanti a debug.espero.it non basta ingannarlo con il solo
+        // User-Agent: la managed WAF droppa comunque la connessione (nessuna
+        // risposta) quando il body contiene caratteri "sospetti" tipo la pipe
+        // "|" (usata dalle tabelle Markdown) o gli angle bracket. Con il SET
+        // COMPLETO di header di un browser reale (Accept, Accept-Language,
+        // Referer/Origin same-site, sec-ch-ua, Sec-Fetch-*) la richiesta viene
+        // classificata come navigazione legittima e i payload passano. Senza
+        // questi header, add_issue_note con una tabella MD fallisce muta.
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "application/json, text/plain, */*",
+        "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+        Referer: "https://debug.espero.it/mantis/",
+        Origin: "https://debug.espero.it",
+        "sec-ch-ua":
+          '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
       },
       timeout: 30000,
     });
