@@ -62,41 +62,11 @@ export interface MantisUser {
   email: string;
 }
 
-// ── Text sanitization ───────────────────────────────────────────────
-// La REST API di MantisBT su debug.espero.it rifiuta (silenziosamente, con
-// 500/errore vuoto) i payload che contengono caratteri non-ASCII: una nota
-// con accenti o punteggiatura tipografica (·, "virgolette curve", em-dash)
-// fallisce muta. Traslitteriamo gli accenti latini piu' comuni e la
-// punteggiatura Unicode verso ASCII, poi togliamo qualsiasi residuo > 0x7F.
-export function sanitizeText(input: string): string {
-  const map: Record<string, string> = {
-    à: "a", á: "a", â: "a", ä: "a", ã: "a", å: "a",
-    è: "e", é: "e", ê: "e", ë: "e",
-    ì: "i", í: "i", î: "i", ï: "i",
-    ò: "o", ó: "o", ô: "o", ö: "o", õ: "o",
-    ù: "u", ú: "u", û: "u", ü: "u",
-    ç: "c", ñ: "n", ý: "y", ÿ: "y",
-    À: "A", Á: "A", Â: "A", Ä: "A", Ã: "A",
-    È: "E", É: "E", Ê: "E", Ë: "E",
-    Ì: "I", Í: "I", Î: "I", Ï: "I",
-    Ò: "O", Ó: "O", Ô: "O", Ö: "O", Õ: "O",
-    Ù: "U", Ú: "U", Û: "U", Ü: "U",
-    Ç: "C", Ñ: "N",
-    "’": "'", "‘": "'", "‛": "'",
-    "“": '"', "”": '"', "„": '"',
-    "–": "-", "—": "-", "―": "-", "‑": "-", "‒": "-",
-    "…": "...", "•": "-", "·": "-", "‧": "-",
-    "«": "<<", "»": ">>",
-    " ": " ", " ": " ", " ": " ",
-    "€": "EUR", "£": "GBP", "©": "(c)", "®": "(r)", "™": "(tm)",
-    "°": " gradi", "±": "+/-", "×": "x", "÷": "/",
-  };
-  return input
-    .replace(/[^\x00-\x7F]/g, (ch) => (ch in map ? map[ch] : "?"))
-    // le sostituzioni multi-char sopra (es. em-dash mappato prima) sono gia'
-    // ASCII; questo replace copre solo i char non mappati -> "?"
-    ;
-}
+// Nota storica: qui c'era una traslitterazione UTF-8 -> ASCII (sanitizeText)
+// perche' i POST con caratteri non-ASCII fallivano muti. Il vero colpevole era
+// la WAF Cloudflare, risolta con il set completo di header browser (vedi
+// costruttore sotto): verificato il 2026-07-16 che l'API accetta e restituisce
+// UTF-8 identico (accenti, em-dash, virgolette curve, euro). Rimossa.
 
 // ── Client ──────────────────────────────────────────────────────────
 
@@ -202,12 +172,7 @@ export class MantisClient {
     reporter?: { name: string };
     tags?: Array<{ name: string }>;
   }): Promise<MantisIssue> {
-    const payload = {
-      ...data,
-      summary: sanitizeText(data.summary),
-      description: sanitizeText(data.description),
-    };
-    const resp = await this.api.post<{ issue: MantisIssue }>("/issues", payload);
+    const resp = await this.api.post<{ issue: MantisIssue }>("/issues", data);
     return resp.data.issue;
   }
 
@@ -250,10 +215,9 @@ export class MantisClient {
     issueId: number,
     data: { text: string; view_state?: { name: string } }
   ): Promise<MantisNote> {
-    const payload = { ...data, text: sanitizeText(data.text) };
     const resp = await this.api.post<{ note: MantisNote }>(
       `/issues/${issueId}/notes`,
-      payload
+      data
     );
     return resp.data.note;
   }
