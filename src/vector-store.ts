@@ -176,21 +176,31 @@ export class VectorStore {
       queryEmbedding.byteLength
     );
 
+    // La KNN deve stare in una CTE isolata sul virtual table vec0: con una
+    // JOIN diretta il query planner non spinge il LIMIT dentro lo scan vec0,
+    // che quindi lancia "A LIMIT or 'k = ?' constraint is required on vec0
+    // knn queries". Isolando MATCH+LIMIT nella CTE e facendo la JOIN dopo,
+    // vec0 vede il vincolo k e la query funziona.
     const rows = this.db
       .prepare(
-        `SELECT
-           v.chunk_id,
-           v.distance,
+        `WITH knn AS (
+           SELECT chunk_id, distance
+           FROM vec_chunks
+           WHERE embedding MATCH ?
+           ORDER BY distance
+           LIMIT ?
+         )
+         SELECT
+           k.chunk_id,
+           k.distance,
            c.issue_id,
            c.chunk_type,
            c.note_id,
            c.text,
            c.metadata_json
-         FROM vec_chunks v
-         JOIN chunks c ON c.id = v.chunk_id
-         WHERE v.embedding MATCH ?
-         ORDER BY v.distance
-         LIMIT ?`
+         FROM knn k
+         JOIN chunks c ON c.id = k.chunk_id
+         ORDER BY k.distance`
       )
       .all(vecBuf, limit) as SearchResult[];
 
