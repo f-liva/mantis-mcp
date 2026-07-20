@@ -171,6 +171,7 @@ export class MantisClient {
     handler?: { name: string };
     reporter?: { name: string };
     tags?: Array<{ name: string }>;
+    view_state?: { name: string };
   }): Promise<MantisIssue> {
     const resp = await this.api.post<{ issue: MantisIssue }>("/issues", data);
     return resp.data.issue;

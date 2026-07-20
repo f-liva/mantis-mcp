@@ -107,6 +107,7 @@ export function registerCrudTools(
       handler: z.string().optional().describe("Handler username"),
       reporter: z.string().optional().describe("Reporter: username OR full/partial real name (resolved by searching the project's known users). Requires admin to set someone other than the API user."),
       tags: z.array(z.string()).optional().describe("Tag names"),
+      view_state: z.enum(["public", "private"]).optional().describe("Visibility (default: public). 'private' = visible only to the reporter and project managers/devs."),
       files: z.array(z.string()).optional().describe("Local file paths to attach to the issue (e.g. the .eml of the source email conversation)"),
     },
     async (params) => {
@@ -119,6 +120,7 @@ export function registerCrudTools(
         if (params.category) data.category = { name: params.category };
         if (params.priority) data.priority = { name: params.priority };
         if (params.severity) data.severity = { name: params.severity };
+        if (params.view_state) data.view_state = { name: params.view_state };
         if (params.handler) data.handler = { name: params.handler };
         if (params.reporter) {
           const r = await client.resolveUser(params.reporter, params.project_id);
