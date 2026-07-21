@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from "axios";
+import { randomBytes } from "node:crypto";
 import type { Config } from "./config.js";
 import { logger } from "./logger.js";
 
@@ -160,6 +161,16 @@ export class MantisClient {
     return resp.data.issues[0];
   }
 
+  /** The user behind MANTIS_API_KEY (cached for the process lifetime) */
+  private me?: MantisRef;
+  async getMe(): Promise<MantisRef> {
+    if (!this.me) {
+      const resp = await this.api.get<MantisRef>("/users/me");
+      this.me = { id: resp.data.id, name: resp.data.name };
+    }
+    return this.me;
+  }
+
   /** Create a new issue */
   async createIssue(data: {
     summary: string;
@@ -170,11 +181,37 @@ export class MantisClient {
     severity?: { name: string };
     handler?: { name: string };
     reporter?: { name: string };
+    status?: { name: string };
     tags?: Array<{ name: string }>;
     view_state?: { name: string };
   }): Promise<MantisIssue> {
     const resp = await this.api.post<{ issue: MantisIssue }>("/issues", data);
     return resp.data.issue;
+  }
+
+  /**
+   * Create a user. Used to give an issue a reporter that has no Mantis
+   * account yet (e.g. a customer who wrote by email): the account is created
+   * disabled with a random password, so it is only a label - nobody can log
+   * in with it and no welcome mail is triggered.
+   */
+  async createUser(data: {
+    username: string;
+    real_name?: string;
+    email: string;
+    access_level?: string;
+    enabled?: boolean;
+  }): Promise<MantisRef> {
+    const resp = await this.api.post<{ user: MantisRef }>("/users", {
+      username: data.username,
+      password: randomBytes(18).toString("base64url"),
+      real_name: data.real_name ?? data.username,
+      email: data.email,
+      access_level: { name: data.access_level ?? "reporter" },
+      enabled: data.enabled ?? false,
+      protected: false,
+    });
+    return resp.data.user;
   }
 
   /** Update an existing issue */

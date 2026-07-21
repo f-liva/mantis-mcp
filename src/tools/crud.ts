@@ -96,7 +96,7 @@ export function registerCrudTools(
   // ── create_issue ───────────────────────────────────────────────────
   server.tool(
     "create_issue",
-    "Create a new issue in MantisBT",
+    "Create a new issue in MantisBT. The issue is assigned right away: unless a different handler is given it goes to the API user, with status 'assigned'.",
     {
       summary: z.string().describe("Issue summary/title"),
       description: z.string().describe("Issue description"),
@@ -104,8 +104,10 @@ export function registerCrudTools(
       category: z.string().optional().describe("Category name"),
       priority: z.string().optional().describe("Priority name (e.g. 'normal', 'high', 'urgent')"),
       severity: z.string().optional().describe("Severity name"),
-      handler: z.string().optional().describe("Handler username"),
+      handler: z.string().optional().describe("Handler username (default: the API user, so the issue starts as 'assigned')"),
       reporter: z.string().optional().describe("Reporter: username OR full/partial real name (resolved by searching the project's known users). Requires admin to set someone other than the API user."),
+      reporter_email: z.string().email().optional().describe("Email of the reporter. When the reporter has no Mantis account yet (e.g. the sender of the source email), pass it and the account is created automatically: disabled, random password, access level 'reporter' - a label only, no login and no welcome mail."),
+      reporter_real_name: z.string().optional().describe("Full name of the reporter, used when the account has to be created (default: the username)"),
       tags: z.array(z.string()).optional().describe("Tag names"),
       view_state: z.enum(["public", "private"]).optional().describe("Visibility (default: public). 'private' = visible only to the reporter and project managers/devs."),
       files: z.array(z.string()).optional().describe("Local file paths to attach to the issue (e.g. the .eml of the source email conversation)"),
@@ -121,9 +123,28 @@ export function registerCrudTools(
         if (params.priority) data.priority = { name: params.priority };
         if (params.severity) data.severity = { name: params.severity };
         if (params.view_state) data.view_state = { name: params.view_state };
-        if (params.handler) data.handler = { name: params.handler };
+        // assigned to someone from the start, never left hanging as "new"
+        data.handler = { name: params.handler ?? (await client.getMe()).name };
+        data.status = { name: "assigned" };
+
+        let createdUserNote = "";
         if (params.reporter) {
           const r = await client.resolveUser(params.reporter, params.project_id);
+          if (!r.user && !r.candidates && params.reporter_email) {
+            // unknown reporter (typically the sender of the source email):
+            // give them a disabled placeholder account so the issue can be
+            // attributed to them
+            const username = /^[a-z0-9._-]+$/i.test(params.reporter)
+              ? params.reporter
+              : params.reporter_email.split("@")[0].replace(/[^a-z0-9._-]/gi, "");
+            const created = await client.createUser({
+              username,
+              real_name: params.reporter_real_name ?? params.reporter,
+              email: params.reporter_email,
+            });
+            createdUserNote = `\n\n[created user] ${created.name} (disabled, reporter level) for ${params.reporter_email}`;
+            data.reporter = { name: created.name };
+          }
           if (r.candidates) {
             const list = r.candidates
               .map((u) => `- ${u.name} (${u.real_name}, ${u.email})`)
@@ -140,7 +161,9 @@ export function registerCrudTools(
           }
           // resolved -> exact username; otherwise pass the raw string and let
           // the API try to match it (e.g. an exact username not seen in issues).
-          data.reporter = { name: r.user ? r.user.name : params.reporter };
+          if (!data.reporter) {
+            data.reporter = { name: r.user ? r.user.name : params.reporter };
+          }
         }
         if (params.tags) data.tags = params.tags.map((name) => ({ name }));
 
@@ -160,7 +183,7 @@ export function registerCrudTools(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(issue, null, 2) + attachNote,
+              text: JSON.stringify(issue, null, 2) + createdUserNote + attachNote,
             },
           ],
         };
