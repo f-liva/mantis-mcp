@@ -394,6 +394,39 @@ export function registerCrudTools(
     }
   );
 
+  // ── delete_issue_note ──────────────────────────────────────────────
+  server.tool(
+    "delete_issue_note",
+    "Delete a note from an issue. IRREVERSIBILE. Non esiste un update della nota nell'API Mantis: per correggere una nota, eliminala e riaggiungila con add_issue_note (nuovo id/timestamp).",
+    {
+      issue_id: z.number().int().positive().describe("Issue ID che contiene la nota"),
+      note_id: z.number().int().positive().describe("Note ID da eliminare"),
+    },
+    async (params) => {
+      try {
+        await client.deleteNote(params.issue_id, params.note_id);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Nota #${params.note_id} eliminata.`,
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error deleting note #${params.note_id}: ${err instanceof Error ? err.message : String(err)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
   // ── get_projects ───────────────────────────────────────────────────
   server.tool(
     "get_projects",

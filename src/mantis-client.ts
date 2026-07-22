@@ -260,6 +260,17 @@ export class MantisClient {
     return resp.data.note;
   }
 
+  /**
+   * Delete a note. L'API REST MantisBT NON espone un update della nota (nessun
+   * PATCH): l'unico modo per "correggerne" una e' cancellarla e riaggiungerla
+   * (delete + addNote), che pero' cambia id e timestamp.
+   * Endpoint: DELETE /issues/{issueId}/notes/{noteId} — servono ENTRAMBI gli id
+   * (verificato sul campo: /issues/notes/{id} risponde 404).
+   */
+  async deleteNote(issueId: number, noteId: number): Promise<void> {
+    await this.api.delete(`/issues/${issueId}/notes/${noteId}`);
+  }
+
   /** List all projects */
   async getProjects(): Promise<MantisProject[]> {
     const resp = await this.api.get<{ projects: MantisProject[] }>(
