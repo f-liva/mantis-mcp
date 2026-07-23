@@ -248,10 +248,23 @@ export class MantisClient {
     return resp.data;
   }
 
-  /** Add a note to an issue */
+  /**
+   * Add a note to an issue.
+   *
+   * Se `files` e' valorizzato, gli allegati vengono inviati INLINE nella nota:
+   * a differenza di POST /issues/{id}/files (allegato issue-level, sempre
+   * pubblico e non eliminabile via API), un file inline nella nota risulta
+   * LEGATO alla nota, EREDITA il suo view_state (privato se la nota e' privata,
+   * quindi invisibile al cliente) e sparisce quando la nota viene eliminata.
+   * Verificato sul campo il 2026-07-23.
+   */
   async addNote(
     issueId: number,
-    data: { text: string; view_state?: { name: string } }
+    data: {
+      text: string;
+      view_state?: { name: string };
+      files?: Array<{ name: string; content: string }>;
+    }
   ): Promise<MantisNote> {
     const resp = await this.api.post<{ note: MantisNote }>(
       `/issues/${issueId}/notes`,

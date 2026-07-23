@@ -204,7 +204,7 @@ export function registerCrudTools(
   // ── add_issue_file ─────────────────────────────────────────────────
   server.tool(
     "add_issue_file",
-    "Attach one or more local files to an existing issue (e.g. the .eml of a mail conversation)",
+    "Allega file a livello ISSUE: l'allegato e' SEMPRE PUBBLICO (nessun view_state), non e' legato ad alcuna nota e NON e' eliminabile via API (solo dalla UI). Usalo solo per allegati pubblici svincolati da una nota (es. la .eml di un thread). Per allegati riservati o che accompagnano una nota, usa add_issue_note con file_paths.",
     {
       issue_id: z.number().int().positive().describe("Issue ID"),
       paths: z.array(z.string()).min(1).describe("Local file paths to attach"),
@@ -335,19 +335,32 @@ export function registerCrudTools(
   // ── add_issue_note ─────────────────────────────────────────────────
   server.tool(
     "add_issue_note",
-    "Add a note/comment to an issue",
+    "Add a note/comment to an issue. Con file_paths gli allegati sono LEGATI alla nota ed ereditano il suo view_state: una nota private con file_paths produce un allegato PRIVATO (invisibile al cliente) e rimovibile eliminando la nota. Preferire QUESTO ad add_issue_file per ogni allegato riservato o che deve accompagnare una nota.",
     {
       issue_id: z.number().int().positive().describe("Issue ID"),
       text: z.string().describe("Note text content"),
       view_state: z.enum(["public", "private"]).optional().describe("Visibility (default: public)"),
+      file_paths: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Percorsi locali di file da allegare INLINE alla nota. L'allegato eredita il view_state della nota (privato se la nota e' privata) ed e' legato ad essa (sparisce con delete_issue_note). Usa questo, non add_issue_file, per allegati riservati."
+        ),
     },
     async (params) => {
       try {
-        const noteData: { text: string; view_state?: { name: string } } = {
+        const noteData: {
+          text: string;
+          view_state?: { name: string };
+          files?: Array<{ name: string; content: string }>;
+        } = {
           text: params.text,
         };
         if (params.view_state) {
           noteData.view_state = { name: params.view_state };
+        }
+        if (params.file_paths && params.file_paths.length > 0) {
+          noteData.files = filesToPayload(params.file_paths);
         }
         const note = await client.addNote(params.issue_id, noteData);
 
