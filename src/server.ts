@@ -12,13 +12,20 @@ export interface ServerDeps {
   store: VectorStore;
 }
 
-export async function createServer(
-  config: Config
-): Promise<{ server: McpServer; deps: ServerDeps }> {
-  // Initialize dependencies
+/**
+ * Dipendenze condivise fra tutte le sessioni: lo store e' SQLite su file, una
+ * connessione per sessione HTTP significherebbe piu' writer sullo stesso DB.
+ */
+export async function createDeps(config: Config): Promise<ServerDeps> {
   const client = new MantisClient(config);
   const store = new VectorStore(config);
   await initEmbeddings(config);
+  return { client, store };
+}
+
+/** Un McpServer PER SESSIONE: McpServer regge un solo transport. */
+export function buildServer(config: Config, deps: ServerDeps): McpServer {
+  const { client, store } = deps;
 
   // Create MCP server
   const server = new McpServer({
@@ -32,5 +39,12 @@ export async function createServer(
 
   logger.info("MCP server created with 11 tools registered.");
 
-  return { server, deps: { client, store } };
+  return server;
+}
+
+export async function createServer(
+  config: Config
+): Promise<{ server: McpServer; deps: ServerDeps }> {
+  const deps = await createDeps(config);
+  return { server: buildServer(config, deps), deps };
 }
