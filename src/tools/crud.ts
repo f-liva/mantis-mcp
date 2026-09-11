@@ -367,16 +367,27 @@ export function registerCrudTools(
         // Auto-feedback: una risposta PUBBLICA sposta la issue su "feedback"
         // (palla al reporter; con reassign_on_feedback torna ad assigned quando
         // risponde). Best-effort: non deve far fallire l'aggiunta della nota.
-        // Skip se gia risolta/chiusa (per non riaprirla) o gia in feedback.
+        // Anche una issue "resolved" viene RIAPERTA in feedback: se rispondiamo
+        // vuol dire che la discussione e' ancora aperta, e la risoluzione spetta
+        // comunque al cliente. Skip solo se gia in feedback o se chiusa
+        // (closed = archiviata, non si tocca).
         const isPublic = !params.view_state || params.view_state === "public";
         let autoFeedback: string | null = null;
         if (isPublic) {
           try {
             const cur = await client.getIssue(params.issue_id);
             const st = cur?.status?.name;
-            if (st && !["resolved", "closed", "feedback"].includes(st)) {
-              await client.updateIssue(params.issue_id, { status: { name: "feedback" } });
-              autoFeedback = `status -> feedback (era "${st}")`;
+            if (st && !["closed", "feedback"].includes(st)) {
+              // La PATCH su Mantis richiede una categoria valida: rimandiamo quella corrente.
+              const patch: Record<string, unknown> = { status: { name: "feedback" } };
+              if (cur?.category?.name) {
+                patch.category = { name: cur.category.name };
+              }
+              await client.updateIssue(params.issue_id, patch);
+              autoFeedback =
+                st === "resolved"
+                  ? 'status -> feedback (riaperta: era "resolved")'
+                  : `status -> feedback (era "${st}")`;
             } else {
               autoFeedback = `status invariato ("${st ?? "?"}")`;
             }

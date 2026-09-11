@@ -1,0 +1,20 @@
+wing: mantis_mcp
+rooms:
+- name: cli
+  description: Files from cli/
+  keywords:
+  - cli
+  - cli
+- name: src
+  description: Files from src/
+  keywords:
+  - src
+  - src
+- name: scripts
+  description: Files from tools/
+  keywords:
+  - scripts
+  - tools
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []
